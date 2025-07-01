@@ -1,12 +1,85 @@
 <!DOCTYPE html>
 <html>
-  <head>
-    <meta charset="UTF-8" />
-    <title>Zenith-GUI</title>
-    <link rel="stylesheet" href="index.css" />
-  </head>
+  <head><title>Zenith GUI</title></head>
   <body>
-    <h1>Zenith-GUI</h1>
-    <p>Welcome to Zenith-GUI</p>
+    <h1>Zenith GUI</h1>
+
+    <p id="server-path">No server selected</p>
+    <button onclick="selectServer()">Select Server File</button>
+
+    <h3>Server Options</h3>
+    <label>Server Name: <input id="serverName" type="text" placeholder="My Server">My Server</label><br>
+    <label>Max Players: <input id="maxPlayers" type="number" placeholder="15">15</label><br>
+    <label>Port: <input id="port" type="number" placeholder="25050">25050</label><br>
+    <label><input id="private" type="checkbox"> Private</label><br>
+    <label><input id="steamAuth" type="checkbox"> Steam Authentication (not recommended)</label><br>
+
+    <button id="start-btn" onclick="startServer()" disabled>Start Server</button>
+    <button onclick="stopServer()">Stop Server</button>
+    <p id="status"></p>
+
+    <h3>Server Console</h3>
+    <div id="console" style="background: #111111; color: #00ff00; padding: 10px; height: 300px; overflow-y: auto; font-family: monospace; white-space: pre-wrap; border: 1px solid #444444;"></div>
+
+    <script>
+      const pathDisplay = document.getElementById('server-path');
+      const startBtn = document.getElementById('start-btn');
+      const status = document.getElementById('status');
+
+      let fileSelected = false;
+
+      async function selectServer() {
+        const filePath = await window.serverAPI.selectServer();
+        if (filePath) {
+          pathDisplay.textContent = "Selected: " + filePath;
+          fileSelected = true;
+          startBtn.disabled = false;
+        }
+      }
+
+      async function startServer() {
+        const serverName = document.getElementById('serverName').value.trim();
+        const maxPlayers = document.getElementById('maxPlayers').value;
+        const port = parseInt(document.getElementById('port').value, 10);
+        const privateMode = document.getElementById('private').checked;
+        const steamAuth = document.getElementById('steamAuth').checked;
+
+        if (!serverName || !maxPlayers || port <= 1000) {
+          status.textContent = "Please fill all required fields (serverName, maxPlayers, and also port must be over 1000)";
+          return;
+        }
+
+        const result = await window.serverAPI.start({
+          serverName,
+          maxPlayers,
+          port,
+          privateMode,
+          steamAuth
+        });
+
+        if (result === 'started') {
+          status.textContent = "Server started!";
+        } else {
+          status.textContent = "Failed to start server.";
+        }
+      }
+
+      async function stopServer() {
+        await window.serverAPI.stop();
+        status.textContent = "Sent 'exit' to server.";
+      }
+
+      const consoleDiv = document.getElementById('console');
+
+      window.consoleAPI.onConsoleOutput((msg) => {
+        const shouldScroll = consoleDiv.scrollTop + consoleDiv.clientHeight === consoleDiv.scrollHeight;
+      
+        consoleDiv.textContent += msg;
+      
+        if (shouldScroll) {
+          consoleDiv.scrollTop = consoleDiv.scrollHeight;
+        }
+      });
+    </script>
   </body>
 </html>

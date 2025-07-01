@@ -1,5 +1,10 @@
-const { app, BrowserWindow } = require('electron');
-const path = require('node:path');
+const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { spawn } = require('child_process');
+const path = require('path');
+
+let mainWindow;
+let serverProcess = null;
+let serverExePath = null;
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (require('electron-squirrel-startup')) {
@@ -8,16 +13,19 @@ if (require('electron-squirrel-startup')) {
 
 const createWindow = () => {
   // Create the browser window.
-  const mainWindow = new BrowserWindow({
+  mainWindow = new BrowserWindow({
+    icon: path.join(__dirname, 'img', 'zenith-round.png'),
+    autoHideMenuBar: true,
     width: 800,
     height: 600,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
     },
+    contextIsolation: true,
   });
 
   // and load the index.html of the app.
-  mainWindow.loadFile(path.join(__dirname, 'index.html'));
+  mainWindow.loadFile('src/index.html');
 };
 
 // This method will be called when Electron has finished
@@ -46,3 +54,72 @@ app.on('window-all-closed', () => {
 
 // In this file you can include the rest of your app's specific main process
 // code. You can also put them in separate files and import them here.
+
+ipcMain.handle('select-server', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    filters: [{ name: 'Executable', extensions: ['exe'] }],
+    properties: ['openFile'],
+  });
+
+  if (!result.canceled && result.filePaths.length > 0) {
+    serverExePath = result.filePaths[0];
+    return serverExePath;
+  }
+
+  return null;
+});
+
+ipcMain.handle('start-server', (_event, args) => {
+  if (!serverExePath || serverProcess) return;
+
+  const {
+    serverName,
+    maxPlayers,
+    port,
+    privateMode,
+    steamAuth,
+  } = args;
+
+  if (!serverName || !maxPlayers || port <= 1000) {
+    return 'invalid';
+  }
+
+  const flags = [
+    '--hostname', `"${serverName}"`,
+    '--maxplayers', maxPlayers,
+    '--port', port,
+    '--nosteam',
+  ];
+
+  if (privateMode) flags.push('--private');
+  if (steamAuth) {
+    const i = flags.indexOf('--nosteam');
+    if (i !== -1) flags.splice(i, 1);
+  }
+
+  serverProcess = spawn(serverExePath, flags, {
+    cwd: path.dirname(serverExePath),
+    shell: true,
+  });
+
+  serverProcess.stdout.on('data', (data) => {
+    mainWindow.webContents.send('console-output', data.toString());
+  });
+
+  serverProcess.stderr.on('data', (data) => {
+    mainWindow.webContents.send('console-output', `[stderr] ${data.toString()}`);
+  });
+
+  serverProcess.on('close', (code) => {
+    console.log(`Server exited with code ${code}`);
+    serverProcess = null;
+  });
+
+  return 'started'; // TODO crashing
+});
+
+ipcMain.handle('stop-server', () => {
+  if (serverProcess && serverProcess.stdin.writable) {
+    serverProcess.stdin.write('exit\n'); // TODO broken?
+  }
+});
